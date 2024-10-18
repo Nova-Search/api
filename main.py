@@ -6,7 +6,10 @@ import sqlite3
 from datetime import datetime, timedelta
 import os
 import sys
-import threading
+
+if __name__ == "__main__":
+    print("\033[1;34mYou ran the API wrong; check README.md for more info\033[0m")
+    sys.exit(1)
 
 app = FastAPI()
 
@@ -195,22 +198,3 @@ def get_favicon(favicon_id: str):
             return FileResponse(favicon_path)
 
     raise HTTPException(status_code=404, detail="Favicon not found.")
-
-def command_listener():
-    """Listen for commands from the console."""
-    while True:
-        command = input("Enter command (help, restart, stop): ").strip().lower()
-        if command == "help":
-            print("Available commands: help, restart, stop")
-        elif command == "restart":
-            print("Restarting the application...")
-            os.execv(sys.executable, ['python'] + sys.argv)
-        elif command == "stop":
-            print("Stopping the application...")
-            sys.exit(0)
-        else:
-            print("Unknown command. Type 'help' for a list of commands.")
-
-# Start the command listener in a separate thread
-command_thread = threading.Thread(target=command_listener, daemon=True)
-command_thread.start()
