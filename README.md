@@ -28,6 +28,7 @@ uvicorn main:app --reload
 This will start the API on http://127.0.0.1:8000
 
 5. Testing the API (optional)
+
 Run the following command to test the API
 
 ```
