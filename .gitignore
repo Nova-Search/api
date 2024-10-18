@@ -1,0 +1,10 @@
+# API data
+.env
+links.db
+favicons/*
+
+# Python
+__pycache__/*
+
+# macOS
+.DS_Store
