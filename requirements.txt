@@ -1,6 +1,6 @@
 fastapi
 pydantic
-sqlite3
+uvicorn
 requests
 beautifulsoup4
 tqdm
