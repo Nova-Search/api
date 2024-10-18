@@ -22,7 +22,7 @@ pip install fastapi uvicorn sqlite3
 
 4. Run the API
 ```
-uvicorn main:app --reload
+uvicorn main:app
 ```
 This will start the API on `http://127.0.0.1:8000`
 
