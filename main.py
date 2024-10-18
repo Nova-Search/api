@@ -7,6 +7,9 @@ from datetime import datetime, timedelta
 import os
 import sys
 
+if __name__ == "__main__":
+    print("\033[1;34mInfo: You ran the API wrong; check the README for more info\033[0m")
+
 app = FastAPI()
 
 # Constants
@@ -194,6 +197,3 @@ def get_favicon(favicon_id: str):
             return FileResponse(favicon_path)
 
     raise HTTPException(status_code=404, detail="Favicon not found.")
-
-if __name__ == "__main__":
-    print("\033[1;34mInfo: You ran the API wrong; check the README for more info\033[0m")
