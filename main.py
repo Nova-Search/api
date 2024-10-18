@@ -8,7 +8,7 @@ import os
 import sys
 
 if __name__ == "__main__":
-    print("\033[1;34mYou ran the API wrong; check the README for more info\033[0m")
+    print("\033[1;34mYou ran the API wrong; check README.md for more info\033[0m")
     sys.exit(1)
 
 app = FastAPI()
