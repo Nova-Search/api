@@ -18,7 +18,7 @@ source venv/bin/activate  # On Windows use `venv\Scripts\activate`
 
 3. Install required dependencies
 ```
-pip install fastapi uvicorn sqlite3
+pip install -r requirements.txt
 ```
 
 4. Run the API

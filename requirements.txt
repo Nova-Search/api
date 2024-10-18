@@ -1,0 +1,7 @@
+fastapi
+pydantic
+sqlite3
+requests
+beautifulsoup4
+tqdm
+pillow
