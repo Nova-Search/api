@@ -7,6 +7,7 @@ The API for Nova Search
 ```
 git clone https://github.com/Nova-Search/api
 cd api
+git submodule update --init --recursive
 ```
 
 2. Create a virtual environment (optional but recommended)
@@ -37,3 +38,29 @@ curl -X 'GET' \
   'http://127.0.0.1:8000/search?query=example' \
   -H 'accept: application/json'
 ```
+
+## Crawling Sites for Pages
+
+This repository includes a submodule for the Nova Search crawler. To use it, follow these steps:
+
+1. Initialize and update the submodule
+    ```sh
+    git submodule update --init --recursive
+    ```
+
+2. Navigate to the crawler directory
+    ```sh
+    cd crawler
+    ```
+
+3. Install the required dependencies
+    ```sh
+    pip install -r requirements.txt
+    ```
+
+4. Run the crawler
+    ```sh
+    python web.py
+    ```
+
+The crawler will ask you for a URL to start with, a depth for URLs to crawl, then start fetching pages from the specified sites.
