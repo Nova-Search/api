@@ -24,9 +24,9 @@ pip install fastapi uvicorn sqlite3
 ```
 uvicorn main:app --reload
 ```
+This will start the API on http://127.0.0.1:8000
 
 If you do not have an existing links.db database, the API will throw a warning and ask you if you want to create it, in most cases you'd choose yes, otherwise choose no and panic trying to find your missing database.
-This will start the API on http://127.0.0.1:8000
 
 5. Testing the API (optional)
 
