@@ -136,7 +136,7 @@ def search(query: str = Query(...)):
 
         results = cursor.fetchall()
         if not results:
-            raise HTTPException(status_code=204, detail="No results found.")
+            raise HTTPException(status_code=410, detail="No results found.")
 
         return [
             {
