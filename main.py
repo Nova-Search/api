@@ -98,9 +98,10 @@ app.add_middleware(
 )
 
 def get_db_connection():
-    """Establish a new database connection."""
+    """Establish a new database connection and enable WAL mode."""
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
+    conn.execute('PRAGMA journal_mode=WAL;')  # Enable WAL mode
     return conn
 
 @app.get("/search")
