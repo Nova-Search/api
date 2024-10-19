@@ -22,8 +22,8 @@ request_counts = {}
 
 # Rate limit configuration
 RATE_LIMITS = {
-    "GET": 30,  # requests per minute
-    "POST": 10  # requests per minute
+    "GET": 15,  # requests per minute
+    "POST": 5  # requests per minute
 }
 TIME_WINDOW = timedelta(minutes=1)  # time window
 
