@@ -104,6 +104,10 @@ def get_db_connection():
     conn.execute('PRAGMA journal_mode=WAL;')  # Enable WAL mode
     return conn
 
+@app.get("/")
+def read_root():
+    return [{"message": "If you can see this, the Nova Search API is working.", "documentation": "https://docs.novasearch.xyz"}]
+
 @app.get("/search")
 def search(query: str = Query(...)):
     """Search the database by title, description, keywords, and URL."""
