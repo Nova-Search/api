@@ -107,6 +107,9 @@ def get_db_connection():
 @app.get("/search")
 def search(query: str = Query(...)):
     """Search the database by title, description, keywords, and URL."""
+    if not query.strip():
+        raise HTTPException(status_code=400, detail="Query cannot be blank.")
+
     conn = get_db_connection()
     cursor = conn.cursor()
 
