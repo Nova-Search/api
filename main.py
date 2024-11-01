@@ -120,7 +120,7 @@ def search(query: str = Query(...)):
     try:
         cursor.execute(
             '''
-            SELECT url, title, description, keywords, priority, favicon_id
+            SELECT url, title, description, keywords, priority, favicon_id, last_crawled
             FROM pages
             WHERE 
                 title LIKE ? OR 
@@ -152,7 +152,8 @@ def search(query: str = Query(...)):
                 "title": row["title"],
                 "description": row["description"],
                 "keywords": row["keywords"],
-                "favicon_id": row["favicon_id"]
+                "favicon_id": row["favicon_id"],
+                "last_crawled": row["last_crawled"]
             }
             for row in results
         ]
