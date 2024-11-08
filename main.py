@@ -109,15 +109,36 @@ def read_root():
     return [{"message": "If you can see this, the Nova Search API is working.", "documentation": "https://docs.novasearch.xyz"}]
 
 @app.get("/search")
-def search(query: str = Query(...)):
-    """Search the database by title, description, keywords, and URL."""
+def search(query: str = Query(...), page: int = 1, page_size: int = 15):
+    """Search the database by title, description, keywords, and URL with pagination."""
     if not query.strip():
         raise HTTPException(status_code=400, detail="Query cannot be blank.")
+
+    offset = (page - 1) * page_size
 
     conn = get_db_connection()
     cursor = conn.cursor()
 
     try:
+        # Count the total number of results
+        cursor.execute(
+            '''
+            SELECT COUNT(*)
+            FROM pages
+            WHERE 
+                title LIKE ? OR 
+                description LIKE ? OR 
+                keywords LIKE ? OR 
+                url LIKE ?
+            ''',
+            (
+                f'%{query}%', f'%{query}%', f'%{query}%', f'%{query}%'
+            )
+        )
+        total_results = cursor.fetchone()[0]
+        total_pages = (total_results + page_size - 1) // page_size + 1
+
+        # Fetch the paginated results
         cursor.execute(
             '''
             SELECT url, title, description, keywords, priority, favicon_id, last_crawled
@@ -135,10 +156,12 @@ def search(query: str = Query(...)):
                     ELSE 4
                 END, 
                 priority DESC
+            LIMIT ? OFFSET ?
             ''',
             (
                 f'%{query}%', f'%{query}%', f'%{query}%', f'%{query}%',
-                f'%{query}%', f'%{query}%', f'%{query}%'
+                f'%{query}%', f'%{query}%', f'%{query}%',
+                page_size, offset
             )
         )
 
@@ -146,17 +169,22 @@ def search(query: str = Query(...)):
         if not results:
             raise HTTPException(status_code=410, detail="No results found.")
 
-        return [
-            {
-                "url": row["url"],
-                "title": row["title"],
-                "description": row["description"],
-                "keywords": row["keywords"],
-                "favicon_id": row["favicon_id"],
-                "last_crawled": row["last_crawled"]
-            }
-            for row in results
-        ]
+        return {
+            "current_page": page,
+            "total_pages": total_pages,
+            "total_results": total_results,
+            "results": [
+                {
+                    "url": row["url"],
+                    "title": row["title"],
+                    "description": row["description"],
+                    "keywords": row["keywords"],
+                    "favicon_id": row["favicon_id"],
+                    "last_crawled": row["last_crawled"]
+                }
+                for row in results
+            ]
+        }
 
     except sqlite3.Error as e:
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
