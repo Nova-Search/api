@@ -50,7 +50,8 @@ def create_db():
             description TEXT,
             keywords TEXT,
             priority INTEGER DEFAULT 0,
-            favicon_id TEXT
+            favicon_id TEXT,
+            last_crawled TIMESTAMP
         )
     ''')
     conn.commit()
@@ -235,3 +236,59 @@ def get_favicon(favicon_id: str):
             return FileResponse(favicon_path)
 
     raise HTTPException(status_code=404, detail="Favicon not found.")
+
+@app.get("/stats")
+def get_stats():
+    """Get crawl statistics."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Total pages
+        cursor.execute("SELECT COUNT(*) FROM pages")
+        total_pages = cursor.fetchone()[0]
+        
+        # Pages crawled in last 24 hours
+        cursor.execute(
+            "SELECT COUNT(*) FROM pages WHERE last_crawled > datetime('now', '-1 day')"
+        )
+        crawled_last_24h = cursor.fetchone()[0]
+        
+        # Pages never crawled
+        cursor.execute("SELECT COUNT(*) FROM pages WHERE last_crawled IS NULL")
+        never_crawled = cursor.fetchone()[0]
+        
+        # Oldest crawl
+        cursor.execute(
+            "SELECT MIN(last_crawled) FROM pages WHERE last_crawled IS NOT NULL"
+        )
+        oldest_crawl = cursor.fetchone()[0]
+        
+        # Top domains
+        cursor.execute("""
+            SELECT 
+                substr(url, instr(url, '://') + 3, 
+                       case when instr(substr(url, instr(url, '://') + 3), '/') = 0 
+                            then length(url) 
+                            else instr(substr(url, instr(url, '://') + 3), '/') - 1 
+                       end) as domain,
+                COUNT(*) as count
+            FROM pages
+            GROUP BY domain
+            ORDER BY count DESC
+            LIMIT 10
+        """)
+        top_domains = [{"domain": row[0], "count": row[1]} for row in cursor.fetchall()]
+        
+        return {
+            "total_pages": total_pages,
+            "crawled_last_24h": crawled_last_24h,
+            "never_crawled": never_crawled,
+            "oldest_crawl": oldest_crawl,
+            "top_domains": top_domains
+        }
+    
+    except sqlite3.Error as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+    finally:
+        conn.close()
