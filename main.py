@@ -132,13 +132,16 @@ def create_db():
         )
     ''')
     
-    # Robots.txt cache
+    # Domain verification table for webmaster console
     cursor.execute('''
-        CREATE TABLE robots_cache (
-            domain TEXT PRIMARY KEY,
-            content TEXT,
-            last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            crawl_delay INTEGER DEFAULT 1
+        CREATE TABLE domain_verifications (
+            id INTEGER PRIMARY KEY,
+            domain TEXT NOT NULL UNIQUE,
+            verification_token TEXT NOT NULL,
+            method TEXT NOT NULL,
+            status TEXT DEFAULT 'pending',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            verified_at TIMESTAMP
         )
     ''')
     
@@ -150,6 +153,7 @@ def create_db():
     cursor.execute('CREATE INDEX idx_links_from_url ON links(from_url)')
     cursor.execute('CREATE INDEX idx_links_to_url ON links(to_url)')
     cursor.execute('CREATE INDEX idx_crawl_queue_priority ON crawl_queue(priority, next_crawl)')
+    cursor.execute('CREATE INDEX idx_domain_verifications_domain ON domain_verifications(domain, status)')
     
     conn.commit()
     conn.close()
@@ -811,103 +815,204 @@ async def shutdown_event():
     """Stop the crawler when the API shuts down."""
     crawler.running = False
 
-@app.post("/crawl/add_seed")
-def add_seed_url(url: str = Query(...)):
-    """Add a seed URL to start crawling from."""
+# Webmaster Console - Domain Verification and Analytics
+
+@app.post("/webmaster/verify")
+def verify_domain(domain: str = Query(...), method: str = Query("dns", regex="^(dns|file)$")):
+    """Initiate domain verification process."""
     conn = get_db_connection()
     cursor = conn.cursor()
     
     try:
-        # Add to crawl queue with high priority
+        # Generate verification token
+        verification_token = hashlib.md5(f"{domain}-{datetime.now().isoformat()}".encode()).hexdigest()[:16]
+        
+        # Store verification request
         cursor.execute('''
-            INSERT OR IGNORE INTO crawl_queue (url, priority, next_crawl)
-            VALUES (?, 100, datetime('now'))
-        ''', (url,))
+            INSERT OR REPLACE INTO domain_verifications (domain, verification_token, method, status, created_at)
+            VALUES (?, ?, ?, 'pending', datetime('now'))
+        ''', (domain, verification_token, method))
         conn.commit()
         
-        return {"message": f"Added {url} to crawl queue"}
+        if method == "dns":
+            return {
+                "domain": domain,
+                "verification_method": "dns",
+                "verification_token": verification_token,
+                "instructions": f"Add a TXT record to your DNS: nova-site-verification={verification_token}"
+            }
+        else:  # file method
+            return {
+                "domain": domain,
+                "verification_method": "file",
+                "verification_token": verification_token,
+                "instructions": f"Place a file at https://{domain}/nova-verify.txt containing: {verification_token}"
+            }
         
     except sqlite3.Error as e:
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
     finally:
         conn.close()
 
-@app.get("/crawl/queue")
-def get_crawl_queue(limit: int = 50):
-    """Get current crawl queue status."""
+@app.post("/webmaster/verify/confirm")
+def confirm_domain_verification(domain: str = Query(...)):
+    """Confirm domain verification by checking TXT record or file."""
+    import socket
+    import requests
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Get pending verification
+        cursor.execute('''
+            SELECT verification_token, method FROM domain_verifications 
+            WHERE domain = ? AND status = 'pending'
+            ORDER BY created_at DESC LIMIT 1
+        ''', (domain,))
+        
+        result = cursor.fetchone()
+        if not result:
+            raise HTTPException(status_code=404, detail="No pending verification found for this domain")
+        
+        verification_token, method = result
+        verified = False
+        
+        if method == "dns":
+            try:
+                # Check DNS TXT record
+                import dns.resolver
+                answers = dns.resolver.resolve(domain, 'TXT')
+                for answer in answers:
+                    txt_content = str(answer).strip('"')
+                    if f"nova-site-verification={verification_token}" in txt_content:
+                        verified = True
+                        break
+            except:
+                # Fallback without dns library
+                verified = False
+        
+        elif method == "file":
+            try:
+                # Check verification file
+                response = requests.get(f"https://{domain}/nova-verify.txt", timeout=10)
+                if response.status_code == 200 and verification_token in response.text:
+                    verified = True
+            except:
+                verified = False
+        
+        if verified:
+            # Update verification status
+            cursor.execute('''
+                UPDATE domain_verifications 
+                SET status = 'verified', verified_at = datetime('now')
+                WHERE domain = ? AND verification_token = ?
+            ''', (domain, verification_token))
+            conn.commit()
+            
+            return {"domain": domain, "status": "verified", "message": "Domain successfully verified"}
+        else:
+            return {"domain": domain, "status": "failed", "message": "Verification failed. Please check your DNS record or file."}
+        
+    except sqlite3.Error as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+    finally:
+        conn.close()
+
+@app.get("/webmaster/analytics/{domain}")
+def get_domain_analytics(domain: str):
+    """Get analytics for a verified domain."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Check if domain is verified
+        cursor.execute('''
+            SELECT 1 FROM domain_verifications 
+            WHERE domain = ? AND status = 'verified'
+        ''', (domain,))
+        
+        if not cursor.fetchone():
+            raise HTTPException(status_code=403, detail="Domain not verified. Please verify domain ownership first.")
+        
+        # Get domain statistics
+        cursor.execute('''
+            SELECT COUNT(*) FROM pages WHERE domain = ?
+        ''', (domain,))
+        total_pages = cursor.fetchone()[0]
+        
+        cursor.execute('''
+            SELECT COUNT(*) FROM pages 
+            WHERE domain = ? AND last_crawled > datetime('now', '-24 hours')
+        ''', (domain,))
+        crawled_24h = cursor.fetchone()[0]
+        
+        cursor.execute('''
+            SELECT COUNT(*) FROM links WHERE to_url LIKE ?
+        ''', (f"https://{domain}%",))
+        inbound_links = cursor.fetchone()[0]
+        
+        cursor.execute('''
+            SELECT COUNT(*) FROM links WHERE from_url LIKE ?
+        ''', (f"https://{domain}%",))
+        outbound_links = cursor.fetchone()[0]
+        
+        # Get top pages by priority/relevance
+        cursor.execute('''
+            SELECT url, title, priority, page_rank, last_crawled
+            FROM pages 
+            WHERE domain = ?
+            ORDER BY priority DESC, page_rank DESC
+            LIMIT 10
+        ''', (domain,))
+        
+        top_pages = []
+        for row in cursor.fetchall():
+            top_pages.append({
+                "url": row[0],
+                "title": row[1],
+                "priority": row[2],
+                "page_rank": row[3],
+                "last_crawled": row[4]
+            })
+        
+        return {
+            "domain": domain,
+            "overview": {
+                "total_pages": total_pages,
+                "crawled_last_24h": crawled_24h,
+                "inbound_links": inbound_links,
+                "outbound_links": outbound_links
+            },
+            "top_pages": top_pages
+        }
+        
+    except sqlite3.Error as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+    finally:
+        conn.close()
+
+@app.get("/webmaster/domains")
+def get_verified_domains():
+    """Get list of verified domains for the user.""" 
     conn = get_db_connection()
     cursor = conn.cursor()
     
     try:
         cursor.execute('''
-            SELECT url, priority, added_at, attempts, last_attempt, next_crawl, source_url
-            FROM crawl_queue
-            ORDER BY priority DESC, added_at ASC
-            LIMIT ?
-        ''', (limit,))
+            SELECT domain, verified_at FROM domain_verifications 
+            WHERE status = 'verified'
+            ORDER BY verified_at DESC
+        ''')
         
-        results = cursor.fetchall()
+        domains = []
+        for row in cursor.fetchall():
+            domains.append({
+                "domain": row[0],
+                "verified_at": row[1]
+            })
         
-        return {
-            "queue_length": len(results),
-            "queue": [
-                {
-                    "url": row[0],
-                    "priority": row[1],
-                    "added_at": row[2],
-                    "attempts": row[3],
-                    "last_attempt": row[4],
-                    "next_crawl": row[5],
-                    "source_url": row[6]
-                }
-                for row in results
-            ]
-        }
-        
-    except sqlite3.Error as e:
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
-    finally:
-        conn.close()
-
-@app.get("/crawl/status")
-def get_crawl_status():
-    """Get crawler status and statistics."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    try:
-        # Queue statistics
-        cursor.execute('SELECT COUNT(*) FROM crawl_queue')
-        queue_count = cursor.fetchone()[0]
-        
-        cursor.execute('SELECT COUNT(*) FROM crawl_queue WHERE attempts >= 3')
-        failed_count = cursor.fetchone()[0]
-        
-        cursor.execute('SELECT COUNT(*) FROM crawl_queue WHERE next_crawl <= datetime("now")')
-        ready_count = cursor.fetchone()[0]
-        
-        # Recent crawl activity
-        cursor.execute('SELECT COUNT(*) FROM pages WHERE last_crawled > datetime("now", "-1 hour")')
-        crawled_last_hour = cursor.fetchone()[0]
-        
-        # Link discovery statistics
-        cursor.execute('SELECT COUNT(*) FROM links')
-        total_links = cursor.fetchone()[0]
-        
-        return {
-            "crawler_running": crawler.running,
-            "queue_statistics": {
-                "total_queued": queue_count,
-                "ready_to_crawl": ready_count,
-                "failed_urls": failed_count
-            },
-            "crawl_activity": {
-                "crawled_last_hour": crawled_last_hour
-            },
-            "link_discovery": {
-                "total_links_discovered": total_links
-            }
-        }
+        return {"verified_domains": domains}
         
     except sqlite3.Error as e:
         raise HTTPException(status_code=500, detail=f"Database error: {e}")

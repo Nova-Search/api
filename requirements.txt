@@ -6,3 +6,4 @@ beautifulsoup4
 tqdm
 pillow
 aiohttp
+dnspython
